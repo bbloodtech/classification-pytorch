@@ -26,7 +26,7 @@ class DataGenerator(data.Dataset):
         return len(self.annotation_lines)
 
     def __getitem__(self, index):
-        annotation_path = self.annotation_lines[index].split(';')[1].split()[0]
+        annotation_path = self.annotation_lines[index].split(';')[1].rstrip('\n')
         image = Image.open(annotation_path)
         #------------------------------#
         #   读取图像并转换成RGB图像

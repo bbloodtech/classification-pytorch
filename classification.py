@@ -19,12 +19,12 @@ class Classification(object):
         #   model_path指向logs文件夹下的权值文件，classes_path指向model_data下的txt
         #   如果出现shape不匹配，同时要注意训练时的model_path和classes_path参数的修改
         #--------------------------------------------------------------------------#
-        "model_path"        : 'model_data/mobilenet_catvsdog.pth',
+        "model_path"        : 'logs/best_epoch_weights.pth',
         "classes_path"      : 'model_data/cls_classes.txt',
         #--------------------------------------------------------------------#
         #   输入的图片大小
         #--------------------------------------------------------------------#
-        "input_shape"       : [224, 224],
+        "input_shape"       : [48, 1200],
         #--------------------------------------------------------------------#
         #   所用模型种类：
         #   mobilenetv2、
@@ -33,7 +33,7 @@ class Classification(object):
         #   vit_b_16、
         #   swin_transformer_tiny、swin_transformer_small、swin_transformer_base
         #--------------------------------------------------------------------#
-        "backbone"          : 'mobilenetv2',
+        "backbone"          : 'resnet50',
         #--------------------------------------------------------------------#
         #   该变量用于控制是否使用letterbox_image对输入图像进行不失真的resize
         #   否则对图像进行CenterCrop
@@ -72,7 +72,7 @@ class Classification(object):
     #---------------------------------------------------#
     #   获得所有的分类
     #---------------------------------------------------#
-    def generate(self):
+    def generate(self, onnx=False):
         #---------------------------------------------------#
         #   载入模型与权值
         #---------------------------------------------------#
@@ -84,10 +84,10 @@ class Classification(object):
         self.model.load_state_dict(torch.load(self.model_path, map_location=device))
         self.model  = self.model.eval()
         print('{} model, and classes loaded.'.format(self.model_path))
-
-        if self.cuda:
-            self.model = nn.DataParallel(self.model)
-            self.model = self.model.cuda()
+        if not onnx:
+            if self.cuda:
+                self.model = nn.DataParallel(self.model)
+                self.model = self.model.cuda()
 
     #---------------------------------------------------#
     #   检测图片
@@ -129,3 +129,43 @@ class Classification(object):
         plt.title('Class:%s Probability:%.3f' %(class_name, probability))
         plt.show()
         return class_name
+    #
+    #   导出onnx格式
+    # 
+    def convert_to_onnx(self, model_path, opset, simplify):
+        import onnx
+        self.generate(onnx=True)
+
+        im                  = torch.zeros(1, 3, *self.input_shape).to('cpu')  # image size(1, 3, 512, 512) BCHW
+        input_layer_names   = ["images"]
+        output_layer_names  = ["output"]
+        
+        # Export the model
+        print(f'Starting export with onnx {onnx.__version__}.')
+        torch.onnx.export(self.model,
+                        im,
+                        f               = model_path,
+                        verbose         = False,
+                        opset_version   = opset,
+                        training        = torch.onnx.TrainingMode.EVAL,
+                        do_constant_folding = True,
+                        input_names     = input_layer_names,
+                        output_names    = output_layer_names,
+                        dynamic_axes    = None)
+
+        # Checks
+        model_onnx = onnx.load(model_path)  # load onnx model
+        onnx.checker.check_model(model_onnx)  # check onnx model
+
+        # Simplify onnx
+        if simplify:
+            import onnxsim
+            print(f'Simplifying with onnx-simplifier {onnxsim.__version__}.')
+            model_onnx, check = onnxsim.simplify(
+                model_onnx,
+                dynamic_input_shape=False,
+                input_shapes=None)
+            assert check, 'assert check failed'
+            onnx.save(model_onnx, model_path)
+
+        print('Onnx model save as {}'.format(model_path))

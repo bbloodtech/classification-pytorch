@@ -138,3 +138,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+cls_train.txt
+cls_val.txt
+cls_test.txt
+

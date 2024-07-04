@@ -57,9 +57,11 @@ def get_classes(classes_path):
 def preprocess_input(x):
     # x /= 127.5
     # x -= 1.
-    x /= 255
-    x -= np.array([0.485, 0.456, 0.406])
-    x /= np.array([0.229, 0.224, 0.225])
+    # x /= 255
+    # x -= np.array([0.485, 0.456, 0.406])
+    # x /= np.array([0.229, 0.224, 0.225])
+    x -= np.array([62.119, 51.360, 26.246])
+    x /= np.array([68.365, 57.020, 29.512])
     return x
 
 def show_config(**kwargs):
