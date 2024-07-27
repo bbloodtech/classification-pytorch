@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch import nn
-
+import torch.nn.functional as F
 from nets import get_model_from_name
 from utils.utils import (cvtColor, get_classes, letterbox_image,
                          preprocess_input, show_config)
@@ -68,7 +68,9 @@ class Classification(object):
         self.generate()
         
         show_config(**self._defaults)
-
+    # 定义一个钩子函数，将softmax添加到模型输出
+    def add_softmax_hook(self, module, input, output):
+        return torch.nn.functional.softmax(output, dim=1)
     #---------------------------------------------------#
     #   获得所有的分类
     #---------------------------------------------------#
@@ -81,6 +83,8 @@ class Classification(object):
         else:
             self.model  = get_model_from_name[self.backbone](input_shape = self.input_shape, num_classes = self.num_classes, pretrained = False)
         device      = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # 注册钩子到模型的最后一层
+        self.hook_handle = self.model.fc.register_forward_hook(self.add_softmax_hook)
         self.model.load_state_dict(torch.load(self.model_path, map_location=device))
         self.model  = self.model.eval()
         print('{} model, and classes loaded.'.format(self.model_path))
@@ -137,8 +141,8 @@ class Classification(object):
         self.generate(onnx=True)
 
         im                  = torch.zeros(1, 3, *self.input_shape).to('cpu')  # image size(1, 3, 512, 512) BCHW
-        input_layer_names   = ["images"]
-        output_layer_names  = ["output"]
+        input_layer_names   = "images"
+        output_layer_names  = "output"
         
         # Export the model
         print(f'Starting export with onnx {onnx.__version__}.')
@@ -149,10 +153,12 @@ class Classification(object):
                         opset_version   = opset,
                         training        = torch.onnx.TrainingMode.EVAL,
                         do_constant_folding = True,
-                        input_names     = input_layer_names,
-                        output_names    = output_layer_names,
-                        dynamic_axes    = None)
-
+                        input_names     = [input_layer_names],
+                        output_names    = [output_layer_names],
+                        dynamic_axes= {
+                        input_layer_names: {0: 'batch_size'},
+                        output_layer_names: {0: 'batch_size'}})
+        self.hook_handle.remove()
         # Checks
         model_onnx = onnx.load(model_path)  # load onnx model
         onnx.checker.check_model(model_onnx)  # check onnx model
